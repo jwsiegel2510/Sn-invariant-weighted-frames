@@ -53,7 +53,7 @@ def main():
   f.close()
 
 def process_image_to_point_cloud(image, point_count, key):
-  """A helper function which converts a grayscale image (values in [0,1]) into a point cloud in [0,1]^2.
+  """A function which converts a grayscale image (values in [0,1]) into a point cloud in [0,1]^2.
 
       Args: 
         image: The input grayscale image
