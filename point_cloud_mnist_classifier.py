@@ -49,8 +49,8 @@ def random_conv_layer_params(m, n, k, key):
         Randomly initialized weights and biases for the convolutional layer
   """
   w_key, b_key = random.split(key)
-  scale = 2.0 / (k * jnp.sqrt(m))
-  return scale * random.normal(w_key, (n, m, k, k)), scale * random.normal(b_key, (n,))
+  scale = 2.0 / jnp.sqrt(m * k)
+  return scale * random.normal(w_key, (n, m, k)), scale * random.normal(b_key, (n,))
 
 def main():
   # Load point cloud mnist data.
