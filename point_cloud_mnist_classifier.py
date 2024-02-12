@@ -3,6 +3,7 @@
 # Tests different approaches to invariant deep learning on the point cloud MNIST dataset.
 
 import jax.numpy as jnp
+import jax
 from matplotlib import pyplot
 import tensorflow as tf
 # Ensure TF does not see GPU and grab all GPU memory.
@@ -189,6 +190,7 @@ def cross_entropy(model_params, clouds, labels):
   probs = apply_network(model_params, clouds)
   return -1.0*jnp.sum(jnp.log(jnp.sum(jnp.multiply(probs, labels), -1))) / clouds.shape[0]
 
+@jit
 def sort_cloud_along_direction(point_cloud, direction):
   """Sorts a given point cloud in the specified direction.
 
@@ -205,6 +207,7 @@ def sort_cloud_along_direction(point_cloud, direction):
     point_cloud = point_cloud.at[i,:,:].set(point_cloud[i,indices[i,:],:])
   return point_cloud
 
+@jit
 def sort_cloud_along_random_direction(point_cloud, key):
   """Sorts a given collection of point clouds along random 2d directions.
 
@@ -222,7 +225,7 @@ def sort_cloud_along_random_direction(point_cloud, key):
     point_cloud = point_cloud.at[i,:,:].set(point_cloud[i,indices[i,:],:])
   return point_cloud
 
-def train(model_params, train_clouds, train_labels, invariance, key, batch_size = 60, lr = 0.01, mom = 0.9, steps = 5000):
+def train(model_params, train_clouds, train_labels, invariance, key, batch_size = 60, lr = 0.01, mom = 0.9, steps = 80000):
   """Trains the network with invariance imposed in a variety of ways
 
   Args:
@@ -237,7 +240,7 @@ def train(model_params, train_clouds, train_labels, invariance, key, batch_size 
     batch size: Batch size
     lr: learning rate
     mom: momentum parameter
-    steps: number of training steps
+    steps: number of training steps (the default is 80 epochs)
 
   Output:
     Trained model parameters
@@ -253,7 +256,7 @@ def train(model_params, train_clouds, train_labels, invariance, key, batch_size 
       clouds = sort_cloud_along_random_direction(clouds, key)
     if invariance == 'canonical':
       clouds = sort_cloud_along_direction(clouds, jnp.array([1,0]))
-    if i%5 == 0:
+    if i%20 == 0:
       print('Step : ', i, cross_entropy(model_params, clouds, labels))
     grads = grad(cross_entropy)(model_params, clouds, labels) 
     model_params, velocity = update(model_params, velocity, grads, lr, mom)
@@ -274,7 +277,8 @@ def test(model_params, test_clouds, test_labels, invariance):
     The accuracy of the model on the test dataset.
   """
   if invariance == 'canonical':
-    test_clouds = sort_cloud_along_direction(test_clouds, jnp.array([1,0]))
+    with jax.disable_jit():
+      test_clouds = sort_cloud_along_direction(test_clouds, jnp.array([1,0]))
   predictions = jnp.argmax(apply_network(model_params, test_clouds), -1)
   correct = 0.0
   for i in range(predictions.shape[0]):
@@ -297,7 +301,8 @@ def test_with_randomized_invariance(model_params, test_clouds, test_labels, num_
   predictions = jnp.zeros(test_labels.shape)
   keys = random.split(key, num_average)
   for i in range(num_average):
-    test_clouds = sort_cloud_along_random_direction(test_clouds, keys[i])
+    with jax.disable_jit():
+      test_clouds = sort_cloud_along_random_direction(test_clouds, keys[i])
     predictions += apply_network(model_params, test_clouds) 
   predictions = jnp.argmax(predictions, -1)
   correct = 0.0
@@ -357,7 +362,7 @@ def main():
   # Train the fully connected network by canonicalizing via sorting along the x-axis.
   model_params = train(model_params, train_clouds, train_labels, 'randomized', train_key)
 
-  # Test the trained network with canonicalization via sorting along the x-axis..
-  print('Test Accuracy: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, 5, test_key))
+  # Test the trained network with canonicalization via sorting along the x-axis. We use 20 points to average when testing.
+  print('Test Accuracy: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, 20, test_key))
 if __name__ == '__main__':
   main()
