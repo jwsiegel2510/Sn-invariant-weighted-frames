@@ -225,7 +225,7 @@ def sort_cloud_along_random_direction(point_cloud, key):
     point_cloud = point_cloud.at[i,:,:].set(point_cloud[i,indices[i,:],:])
   return point_cloud
 
-def train(model_params, train_clouds, train_labels, invariance, key, batch_size = 60, lr = 0.01, mom = 0.9, steps = 80000):
+def train(model_params, train_clouds, train_labels, invariance, key, batch_size = 60, lr = 0.01, mom = 0.9, steps = 120000):
   """Trains the network with invariance imposed in a variety of ways
 
   Args:
@@ -236,11 +236,12 @@ def train(model_params, train_clouds, train_labels, invariance, key, batch_size 
       'None': no invariance 
       'canonical': canonicalize by sorting along the x-axis
       'randomized': create invariance while preserving continuity by sorting along a random direction.
+      'reynolds': create invariance using the Reynolds operator, i.e. averaging over all possible permutations
     key: Random seed
     batch size: Batch size
     lr: learning rate
     mom: momentum parameter
-    steps: number of training steps (the default is 80 epochs)
+    steps: number of training steps (the default is 120 epochs)
 
   Output:
     Trained model parameters
@@ -253,10 +254,12 @@ def train(model_params, train_clouds, train_labels, invariance, key, batch_size 
     clouds = train_clouds[inds,:,:]
     labels = train_labels[inds,:]
     if invariance == 'randomized':
-      clouds = sort_cloud_along_random_direction(clouds, key)
+      clouds = sort_cloud_along_random_direction(clouds, direction_key)
     if invariance == 'canonical':
       clouds = sort_cloud_along_direction(clouds, jnp.array([1,0]))
-    if i%20 == 0:
+    if invariance == 'reynolds':
+      clouds = random.permutation(direction_key, clouds, axis = 2, independent=True)
+    if i%100 == 0:
       print('Step : ', i, cross_entropy(model_params, clouds, labels))
     grads = grad(cross_entropy)(model_params, clouds, labels) 
     model_params, velocity = update(model_params, velocity, grads, lr, mom)
@@ -285,7 +288,7 @@ def test(model_params, test_clouds, test_labels, invariance):
     correct = correct + test_labels[i][predictions[i]]
   return correct / predictions.shape[0]
 
-def test_with_randomized_invariance(model_params, test_clouds, test_labels, num_average, key):
+def test_with_randomized_invariance(model_params, test_clouds, test_labels, num_average, key, invariance):
   """Test the trained model with invariance imposed through averaging over random directions.
 
   Args:
@@ -294,6 +297,9 @@ def test_with_randomized_invariance(model_params, test_clouds, test_labels, num_
     test_labels: test labels
     num_average: the number of directions to average over when making the prediction
     key: Random seed
+    invariance: Type of invariance used:
+      'randomized': sort along random direction
+      'reynolds': use a random permutation
 
   Returns:
     The accuracy of the model on the test dataset.
@@ -302,15 +308,16 @@ def test_with_randomized_invariance(model_params, test_clouds, test_labels, num_
   keys = random.split(key, num_average)
   for i in range(num_average):
     with jax.disable_jit():
-      test_clouds = sort_cloud_along_random_direction(test_clouds, keys[i])
+      if invariance == 'randomized':
+        test_clouds = sort_cloud_along_random_direction(test_clouds, keys[i])
+      if invariance == 'reynolds':
+        test_clouds = random.permutation(keys[i], test_clouds, axis = 2, independent = True)
     predictions += apply_network(model_params, test_clouds) 
   predictions = jnp.argmax(predictions, -1)
   correct = 0.0
   for i in range(predictions.shape[0]):
     correct = correct + test_labels[i][predictions[i]]
   return correct / predictions.shape[0]
-
-
 
 def main():
   # Load point cloud mnist data.
@@ -354,7 +361,7 @@ def main():
   # Test the trained network with canonicalization via sorting along the x-axis..
   print('Test Accuracy: ', test(model_params, test_clouds, test_labels, 'canonical'))
 
-  print('Invariance via random_averaging:')
+  print('Invariance via sorting along a random direction:')
 
   # Initialize the CNN for classifying point clouds.
   model_params = init_network_params([200, 150, 100, 50, 10], initialize_key)
@@ -362,7 +369,21 @@ def main():
   # Train the fully connected network by canonicalizing via sorting along the x-axis.
   model_params = train(model_params, train_clouds, train_labels, 'randomized', train_key)
 
-  # Test the trained network with canonicalization via sorting along the x-axis. We use 20 points to average when testing.
-  print('Test Accuracy: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, 20, test_key))
+  # Test the trained network with canonicalization via sorting along random directions. We use 25 directions to average when testing.
+  print('Test Accuracy: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, 25, test_key, 'randomized'))
+
+  print('Invariance via Reynolds Operator:')
+  
+  # Initialize the CNN for classifying point clouds.
+  model_params = init_network_params([200, 150, 100, 50, 10], initialize_key)
+
+  # Train the fully connected network by canonicalizing via sorting along the x-axis.
+  model_params = train(model_params, train_clouds, train_labels, 'reynolds', train_key)
+
+  # Test the trained network with canonicalization via the Reynolds operator. We use 25 directions to average when testing.
+  print('Test Accuracy: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, 25, test_key, 'reynolds'))
+
+
+  
 if __name__ == '__main__':
   main()
