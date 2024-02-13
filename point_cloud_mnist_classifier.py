@@ -259,7 +259,7 @@ def train(model_params, train_clouds, train_labels, invariance, key, batch_size 
       clouds = sort_cloud_along_direction(clouds, jnp.array([1,0]))
     if invariance == 'reynolds':
       clouds = random.permutation(direction_key, clouds, axis = 2, independent=True)
-    if i%100 == 0:
+    if i%1000 == 0:
       print('Step : ', i, cross_entropy(model_params, clouds, labels))
     grads = grad(cross_entropy)(model_params, clouds, labels) 
     model_params, velocity = update(model_params, velocity, grads, lr, mom)
@@ -339,6 +339,8 @@ def main():
 
   initialize_key, train_key, test_key = random.split(random.PRNGKey(0), 3)
 
+  sample_counts = [1,5,10,25]
+
   print('No Invariance:')
 
   # Initialize the CNN for classifying point clouds.
@@ -369,8 +371,9 @@ def main():
   # Train the fully connected network by canonicalizing via sorting along the x-axis.
   model_params = train(model_params, train_clouds, train_labels, 'randomized', train_key)
 
-  # Test the trained network with canonicalization via sorting along random directions. We use 25 directions to average when testing.
-  print('Test Accuracy: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, 25, test_key, 'randomized'))
+  # Test the trained network with canonicalization via sorting along random directions.
+  for sample_count in sample_counts:
+    print('Test Accuracy with ',sample_count, 'samples: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, sample_count, test_key, 'randomized'))
 
   print('Invariance via Reynolds Operator:')
   
@@ -380,8 +383,9 @@ def main():
   # Train the fully connected network by canonicalizing via sorting along the x-axis.
   model_params = train(model_params, train_clouds, train_labels, 'reynolds', train_key)
 
-  # Test the trained network with canonicalization via the Reynolds operator. We use 25 directions to average when testing.
-  print('Test Accuracy: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, 25, test_key, 'reynolds'))
+  # Test the trained network with canonicalization via the Reynolds operator.
+  for sample_count in sample_counts:
+    print('Test Accuracy with ', sample_count, 'samples: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, sample_count, test_key, 'reynolds'))
 
 
   
