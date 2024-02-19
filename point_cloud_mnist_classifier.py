@@ -225,7 +225,7 @@ def sort_cloud_along_random_direction(point_cloud, key):
     point_cloud = point_cloud.at[i,:,:].set(point_cloud[i,indices[i,:],:])
   return point_cloud
 
-def train(model_params, train_clouds, train_labels, invariance, key, batch_size = 60, lr = 0.01, mom = 0.9, steps = 120000):
+def train(model_params, train_clouds, train_labels, invariance, key, batch_size = 60, lr = [0.01, 0.005, 0.0025, 0.001], mom = 0.9, steps = 120000):
   """Trains the network with invariance imposed in a variety of ways
 
   Args:
@@ -239,7 +239,7 @@ def train(model_params, train_clouds, train_labels, invariance, key, batch_size 
       'reynolds': create invariance using the Reynolds operator, i.e. averaging over all possible permutations
     key: Random seed
     batch size: Batch size
-    lr: learning rate
+    lr: list of learning rates, the algorithm divides the steps evenly among the listed rates
     mom: momentum parameter
     steps: number of training steps (the default is 120 epochs)
 
@@ -248,6 +248,7 @@ def train(model_params, train_clouds, train_labels, invariance, key, batch_size 
   """
   keys = random.split(key, steps)
   velocity = None
+  steps_per_lr = steps // len(lr)
   for i in range(steps):
     choice_key, direction_key = random.split(keys[i])
     inds = random.choice(choice_key, train_clouds.shape[0], [batch_size])
@@ -262,7 +263,7 @@ def train(model_params, train_clouds, train_labels, invariance, key, batch_size 
     if i%1000 == 0:
       print('Step : ', i, cross_entropy(model_params, clouds, labels))
     grads = grad(cross_entropy)(model_params, clouds, labels) 
-    model_params, velocity = update(model_params, velocity, grads, lr, mom)
+    model_params, velocity = update(model_params, velocity, grads, lr[i // steps_per_lr], mom)
   return model_params
 
 def test(model_params, test_clouds, test_labels, invariance):
