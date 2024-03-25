@@ -264,7 +264,7 @@ def sort_cloud_using_globally_separated_collection(point_cloud, key):
     point_cloud = point_cloud.at[i,:,:].set(point_cloud[i,indices[i,:],:])
   return point_cloud
 
-def train(model_params, train_clouds, train_labels, invariance, key, batch_size = 60, lr = [0.01, 0.005, 0.0025, 0.001], mom = 0.9, steps = 120000):
+def train(model_params, train_clouds, train_labels, invariance, key, batch_size = 60, lr = [0.01, 0.001], mom = 0.9, steps = 30000):
   """Trains the network with invariance imposed in a variety of ways
 
   Args:
@@ -386,7 +386,7 @@ def main():
   initialize_key, train_key, test_key = random.split(random.PRNGKey(0), 3)
 
   sample_counts = [1,5,10,25]
-  invariance_list = ['None', 'canonical', 'randomized', 'reynolds', 'globe-sep']
+  invariance_list = ['globe-sep', 'None', 'canonical', 'randomized', 'reynolds']
   message_dictionary = {'None': 'No Invariance:',
                         'canonical': 'Invariance via (discontinuous) canonicalization:',
                         'randomized': 'Invariance via sorting along a random direction:',
