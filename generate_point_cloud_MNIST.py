@@ -67,11 +67,10 @@ def process_image_to_point_cloud(image, point_count, key):
   coins = random.uniform(sample_key, image.shape)
   trunc = (coins < image)
   cloud = jnp.asarray(jnp.nonzero(trunc))
-  # Jiggle the points a bit
-  cloud = cloud + 0.2 * random.normal(gaussian_key, cloud.shape)
   cloud = jnp.transpose(cloud) / jnp.array([image.shape[0], image.shape[1]])
   index_sample = random.choice(choice_key, cloud.shape[0], [point_count])
-  return cloud[index_sample,:] 
+  # Jiggle the points a bit
+  return cloud[index_sample,:] + 0.2 * random.normal(gaussian_key, (point_count, 2)) / jnp.array([image.shape[0], image.shape[1]])
  
 if __name__ == '__main__':
   main()

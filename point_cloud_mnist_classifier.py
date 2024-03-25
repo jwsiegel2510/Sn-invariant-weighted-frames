@@ -1,6 +1,6 @@
 # Author: Jonathan Siegel
 #
-# Tests different approaches to invariant deep learning on the point cloud MNIST dataset.
+# Tests different approaches to permutation invariant deep learning on the point cloud MNIST dataset.
 
 import jax.numpy as jnp
 import jax
@@ -225,6 +225,45 @@ def sort_cloud_along_random_direction(point_cloud, key):
     point_cloud = point_cloud.at[i,:,:].set(point_cloud[i,indices[i,:],:])
   return point_cloud
 
+# Create a globally separated collection via random initialization
+collection_size = 100
+globally_separated_collection = random.normal(random.PRNGKey(0), (collection_size, 2))
+
+# Use the globally separated collection to sort a random point cloud input.
+@jit
+def sort_cloud_using_globally_separated_collection(point_cloud, key):
+  """Sorts a given collection of point clouds using the globally separated collection. For efficiency, it randomly samples
+     from the corresponding frame. Note, this will fail badly if the points are not distinct!
+
+  Args:
+    point_cloud: the collection of point_clouds
+    key: Random seed
+
+  Returns:
+    The sorted collection of points clouds
+  """
+  # Determine weights from the minimum separation in each direction.
+  point_cloud = jnp.expand_dims(point_cloud, 2)
+  inner_prods = jnp.sum(globally_separated_collection * point_cloud, -1)
+  sorted_inner_prods = jnp.sort(inner_prods, axis = 1)
+  diffs = sorted_inner_prods[:,1:,:] - sorted_inner_prods[:,:-1,:]
+  mins = jnp.min(diffs, axis = 1)
+  totals = jnp.sum(mins, axis = 1, keepdims = True)
+  table = jnp.cumsum(mins, axis = 1) / totals
+
+  # Sample randomly from the corresponding distribution.
+  random_vals = random.uniform(key, jnp.shape(totals))
+  collection_indices = jnp.argmax((table - random_vals > 0).astype(int), axis = -1)
+
+  # Sort along the given directions.
+  point_cloud = point_cloud[:,:,0,:]
+  directions = jnp.expand_dims(globally_separated_collection[collection_indices, :], 1)
+  inner_prods = jnp.sum(point_cloud * directions, -1)
+  indices = jnp.argsort(inner_prods)
+  for i in range(point_cloud.shape[0]):
+    point_cloud = point_cloud.at[i,:,:].set(point_cloud[i,indices[i,:],:])
+  return point_cloud
+
 def train(model_params, train_clouds, train_labels, invariance, key, batch_size = 60, lr = [0.01, 0.005, 0.0025, 0.001], mom = 0.9, steps = 120000):
   """Trains the network with invariance imposed in a variety of ways
 
@@ -237,6 +276,7 @@ def train(model_params, train_clouds, train_labels, invariance, key, batch_size 
       'canonical': canonicalize by sorting along the x-axis
       'randomized': create invariance while preserving continuity by sorting along a random direction.
       'reynolds': create invariance using the Reynolds operator, i.e. averaging over all possible permutations
+      'globe-sep': create invariance using a globally separated collection
     key: Random seed
     batch size: Batch size
     lr: list of learning rates, the algorithm divides the steps evenly among the listed rates
@@ -260,6 +300,8 @@ def train(model_params, train_clouds, train_labels, invariance, key, batch_size 
       clouds = sort_cloud_along_direction(clouds, jnp.array([1,0]))
     if invariance == 'reynolds':
       clouds = random.permutation(direction_key, clouds, axis = 2, independent=True)
+    if invariance == 'globe-sep':
+      clouds = sort_cloud_using_globally_separated_collection(clouds, direction_key)
     if i%1000 == 0:
       print('Step : ', i, cross_entropy(model_params, clouds, labels))
     grads = grad(cross_entropy)(model_params, clouds, labels) 
@@ -301,6 +343,7 @@ def test_with_randomized_invariance(model_params, test_clouds, test_labels, num_
     invariance: Type of invariance used:
       'randomized': sort along random direction
       'reynolds': use a random permutation
+      'globe-sep': use a globally separated collection
 
   Returns:
     The accuracy of the model on the test dataset.
@@ -313,6 +356,8 @@ def test_with_randomized_invariance(model_params, test_clouds, test_labels, num_
         test_clouds = sort_cloud_along_random_direction(test_clouds, keys[i])
       if invariance == 'reynolds':
         test_clouds = random.permutation(keys[i], test_clouds, axis = 2, independent = True)
+      if invariance == 'globe-sep':
+        test_clouds = sort_cloud_using_globally_separated_collection(test_clouds, keys[i])
     predictions += apply_network(model_params, test_clouds) 
   predictions = jnp.argmax(predictions, -1)
   correct = 0.0
@@ -341,54 +386,29 @@ def main():
   initialize_key, train_key, test_key = random.split(random.PRNGKey(0), 3)
 
   sample_counts = [1,5,10,25]
+  invariance_list = ['None', 'canonical', 'randomized', 'reynolds', 'globe_sep']
+  message_dictionary = {'None': 'No Invariance:',
+                        'canonical': 'Invariance via (discontinuous) canonicalization:',
+                        'randomized': 'Invariance via sorting along a random direction:',
+                        'reynolds': 'Invariance via Reynolds Operator:',
+                        'globe-sep': 'Invariance via a globally separating collection:'}
 
-  print('No Invariance:')
+  for invariance in invariance_list:
+    # Print invariance used.
+    print(message_dictionary[invariance])
+    
+    # Initialize the CNN for classifying point clouds.
+    model_params = init_network_params([200, 150, 100, 50, 10], initialize_key)
 
-  # Initialize the CNN for classifying point clouds.
-  model_params = init_network_params([200, 150, 100, 50, 10], initialize_key)
+    # Train the fully connected network with the desired invariance.
+    model_params = train(model_params, train_clouds, train_labels, invariance, train_key)
 
-  # Train the fully connected network without any invariance.
-  model_params = train(model_params, train_clouds, train_labels, 'None', train_key)
+    # Test the trained network using the invariance on the test dataset.
+    if invariance == 'None' or invariance == 'canonical':
+      print('Test Accuracy: ', test(model_params, test_clouds, test_labels, invariance))
+    else:
+      for sample_count in sample_counts:
+        print('Test Accuracy with ',sample_count, 'samples: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, sample_count, test_key, invariance))
 
-  # Test the trained network without any invariance on the test dataset.
-  print('Test Accuracy: ', test(model_params, test_clouds, test_labels, 'None'))
-
-  print('Invariance via canonicalization:')
-
-  # Initialize the CNN for classifying point clouds.
-  model_params = init_network_params([200, 150, 100, 50, 10], initialize_key)
-
-  # Train the fully connected network by canonicalizing via sorting along the x-axis.
-  model_params = train(model_params, train_clouds, train_labels, 'canonical', train_key)
-
-  # Test the trained network with canonicalization via sorting along the x-axis..
-  print('Test Accuracy: ', test(model_params, test_clouds, test_labels, 'canonical'))
-
-  print('Invariance via sorting along a random direction:')
-
-  # Initialize the CNN for classifying point clouds.
-  model_params = init_network_params([200, 150, 100, 50, 10], initialize_key)
-
-  # Train the fully connected network by canonicalizing via sorting along the x-axis.
-  model_params = train(model_params, train_clouds, train_labels, 'randomized', train_key)
-
-  # Test the trained network with canonicalization via sorting along random directions.
-  for sample_count in sample_counts:
-    print('Test Accuracy with ',sample_count, 'samples: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, sample_count, test_key, 'randomized'))
-
-  print('Invariance via Reynolds Operator:')
-  
-  # Initialize the CNN for classifying point clouds.
-  model_params = init_network_params([200, 150, 100, 50, 10], initialize_key)
-
-  # Train the fully connected network by canonicalizing via sorting along the x-axis.
-  model_params = train(model_params, train_clouds, train_labels, 'reynolds', train_key)
-
-  # Test the trained network with canonicalization via the Reynolds operator.
-  for sample_count in sample_counts:
-    print('Test Accuracy with ', sample_count, 'samples: ', test_with_randomized_invariance(model_params, test_clouds, test_labels, sample_count, test_key, 'reynolds'))
-
-
-  
 if __name__ == '__main__':
   main()
