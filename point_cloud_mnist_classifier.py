@@ -386,7 +386,7 @@ def main():
   initialize_key, train_key, test_key = random.split(random.PRNGKey(0), 3)
 
   sample_counts = [1,5,10,25]
-  invariance_list = ['globe-sep', 'None', 'canonical', 'randomized', 'reynolds']
+  invariance_list = ['None', 'canonical', 'randomized', 'globe-sep', 'reynolds']
   message_dictionary = {'None': 'No Invariance:',
                         'canonical': 'Invariance via (discontinuous) canonicalization:',
                         'randomized': 'Invariance via sorting along a random direction:',
