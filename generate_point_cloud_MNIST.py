@@ -29,7 +29,6 @@ def main():
   test_images, test_labels = test_data['image'], test_data['label']
   test_images = jnp.squeeze(jnp.moveaxis(test_images * (1.0/256), -1, 1))
 
-
   # Process the MNIST images into point clouds
   key = random.PRNGKey(0)
   train_key, test_key = random.split(key)

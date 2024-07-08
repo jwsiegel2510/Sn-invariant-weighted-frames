@@ -264,7 +264,7 @@ def sort_cloud_using_globally_separated_collection(point_cloud, key):
     point_cloud = point_cloud.at[i,:,:].set(point_cloud[i,indices[i,:],:])
   return point_cloud
 
-def train(model_params, train_clouds, train_labels, invariance, key, batch_size = 60, lr = [0.01, 0.001], mom = 0.9, steps = 30000):
+def train(model_params, train_clouds, train_labels, invariance, key, batch_size = 60, lr = [0.01, 0.001], mom = 0.9, steps = 60000):
   """Trains the network with invariance imposed in a variety of ways
 
   Args:
